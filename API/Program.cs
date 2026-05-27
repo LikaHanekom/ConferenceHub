@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Scalar.AspNetCore;
 
 // ════════════════════════════════════════════════════
@@ -8,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();  // Register controller support
 builder.Services.AddOpenApi();      // Register built-in OpenAPI document generation
+builder.Services.AddProblemDetails(); //enables standardised error format
 
 // ════════════════════════════════════════════════════
 // TRANSITION — Build() seals the DI container.
@@ -18,8 +20,11 @@ var app = builder.Build();
 // ════════════════════════════════════════════════════
 // PHASE 2 — PIPELINE: Configure the middleware chain.
 // Order matters. Every request passes through these
-// in sequence, top to bottom.
+// in sequence, top to botom.
 // ════════════════════════════════════════════════════
+app.UseExceptionHandler(); // catch unhandled exceptions and return ProblemDetails
+app.UseStatusCodePages(); //Catch any empty 4xx/5xx responses, will add Problem Details body to them. 
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();             // Serves /openapi/v1.json
