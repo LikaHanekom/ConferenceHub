@@ -18,8 +18,8 @@ public interface IBookingRepository
        DateTime end, 
       Guid? excludeBookingId = null                                 
      );
-     Task<Booking> AddAsync (Booking booking);
-     Task<Booking> DeleteAsync(Booking booking);
-     Task<Booking> UpdateAsync(Booking booking); 
+     Task<Booking> AddAsync(Booking booking);
+     Task UpdateAsync(Booking booking);
+     Task DeleteAsync(Booking booking);
 
 }

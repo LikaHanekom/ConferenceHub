@@ -2,13 +2,15 @@ using API.Data;
 using API.DTOs;
 using Microsoft.EntityFrameworkCore;
 using API.Models;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace API.Repositories;
 
 public class BookingRepository(BookingDbContext db) : IBookingRepository
 {
     public async Task<IEnumerable<BookingResponse>> GetAllAsync() =>
-     await db.Bookings
+    
+    await db.Bookings
          .AsNoTracking()
          .Select(b => new BookingResponse(
              b.Id,
@@ -24,7 +26,7 @@ public class BookingRepository(BookingDbContext db) : IBookingRepository
                  .Where(ba => ba.Attendee.IsExternal)
                  .Select(ba => ba.Attendee.Name)
                  .ToList()))
-         .ToListAsync();
+         .ToListAsync(); 
 
     public async Task<BookingDetailResponse?> GetByIdAsync(Guid id)
     {
@@ -113,18 +115,16 @@ public class BookingRepository(BookingDbContext db) : IBookingRepository
         return booking;
     }
 
-    public async Task<Booking> UpdateAsync(Booking booking)
+    public async Task UpdateAsync(Booking booking)
     {
         db.Bookings.Update(booking);
         await db.SaveChangesAsync();
-        return booking;
     }
 
-    public async Task<Booking> DeleteAsync(Booking booking)
+    public async Task DeleteAsync(Booking booking)
     {
         db.Bookings.Remove(booking);
         await db.SaveChangesAsync();
-        return booking;
     }
 }
 

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using API.Data;
+using API.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 // SeedData and BookingDbContext are both in API.Data — no additional using needed.
 
@@ -75,8 +76,18 @@ try
     // Previously AuthController built tokens itself with a hardcoded key.
     // Now the controller delegates to this service; token logic lives in one place.
     builder.Services.AddScoped<IAuthService, AuthService>();
-    builder.Services.AddDbContext<BookingDbContext>(options => 
+    builder.Services.AddDbContext<BookingDbContext>(options =>
         options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+    builder.Services
+        .AddBookingFeature()
+        .AddRoomFeature();
+
+    builder.Host.UseDefaultServiceProvider(options =>
+    {
+        options.ValidateScopes  = true;
+        options.ValidateOnBuild = true;
+    });
 
     //════════════════════════════════════════════════════
     // TRANSITION — Build() seals the DI container.
