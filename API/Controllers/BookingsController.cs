@@ -40,8 +40,9 @@ public class BookingsController(IBookingService bookingService) : ControllerBase
         [FromQuery] string?      roomName,
         [FromQuery] BookingType? type,
         [FromQuery] DateTime?    from,
-        [FromQuery] DateTime?    to) =>
-        Ok(await bookingService.SearchAsync(new BookingSearchQuery(roomName, type, from, to)));
+        [FromQuery] DateTime?    to,
+        [FromQuery] string?      q) =>
+        Ok(await bookingService.SearchAsync(new BookingSearchQuery(roomName, type, from, to, q)));
 
     // ── GET /api/bookings/{id} ────────────────────────────────────────────────
     // Returns full booking detail including room equipment and all attendees.

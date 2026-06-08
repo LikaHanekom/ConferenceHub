@@ -29,6 +29,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddBookingFeature(
         this IServiceCollection services)
     {
+        services.AddSingleton<SlowQueryInterceptor>();
         services.AddScoped<IBookingService, BookingService>();
         services.AddScoped<IBookingRepository, BookingRepository>();
         return services;

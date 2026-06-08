@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using API.Models;
+using NpgsqlTypes;
 
 namespace API.Data;
 
@@ -12,11 +13,6 @@ public class BookingDbContext(DbContextOptions<BookingDbContext> options) : DbCo
     public DbSet<Equipment> Equipment => Set<Equipment>();
     public DbSet<RoomEquipment> RoomEquipment => Set<RoomEquipment>();
     public DbSet<BookingAttendee> BookingAttendees => Set<BookingAttendee>();
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        optionsBuilder.LogTo(Console.WriteLine, LogLevel.Information);
-    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +54,30 @@ public class BookingDbContext(DbContextOptions<BookingDbContext> options) : DbCo
         entity.HasIndex(b => new { b.RoomId, b.StartTime })
             .IsUnique()
             .HasDatabaseName("ix_bookings_room_starttime");
+
+        // Index on Type supports filtered queries like GET /api/bookings/search?type=Maintenance.
+        // Without this, every search by booking type performs a full table scan.
+        entity.HasIndex(b => b.Type)
+            .HasDatabaseName("ix_bookings_type");
+
+        // Composite index on (StartTime, EndTime) supports availability queries.
+        // The IQueryable search filter uses StartTime >= from AND EndTime <= to.
+        // This index allows PostgreSQL to use an index range scan instead of a seq scan.
+        entity.HasIndex(b => new { b.StartTime, b.EndTime })
+            .HasDatabaseName("ix_bookings_time_range");
+
+        // Computed tsvector column backed by a GIN index for full-text search.
+        // The column is generated and stored by PostgreSQL — updated automatically on INSERT/UPDATE.
+        // A standard B-tree index cannot accelerate LIKE '%term%' queries; GIN maps lexemes
+        // to rows (the same structure a search engine uses) and answers @@ queries in log time.
+        entity.Property<NpgsqlTsVector>("SearchVector")
+            .HasComputedColumnSql(
+                "to_tsvector('english', coalesce(\"Title\", '') || ' ' || coalesce(\"Description\", ''))",
+                stored: true);
+
+        entity.HasIndex("SearchVector")
+            .HasMethod("GIN")
+            .HasDatabaseName("ix_bookings_search_vector");
     });
 
         // ── Room ─────────────────────────────────────────────────────────────

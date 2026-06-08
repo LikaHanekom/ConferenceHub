@@ -2,14 +2,12 @@ using API.Data;
 using API.DTOs;
 using Microsoft.EntityFrameworkCore;
 using API.Models;
-using Microsoft.AspNetCore.Http.HttpResults;
-
 namespace API.Repositories;
 
 public class BookingRepository(BookingDbContext db) : IBookingRepository
 {
     public async Task<IEnumerable<BookingResponse>> GetAllAsync() =>
-    
+
     await db.Bookings
          .AsNoTracking()
          .Select(b => new BookingResponse(
@@ -26,7 +24,7 @@ public class BookingRepository(BookingDbContext db) : IBookingRepository
                  .Where(ba => ba.Attendee.IsExternal)
                  .Select(ba => ba.Attendee.Name)
                  .ToList()))
-         .ToListAsync(); 
+         .ToListAsync();
 
     public async Task<BookingDetailResponse?> GetByIdAsync(Guid id)
     {
@@ -69,16 +67,29 @@ public class BookingRepository(BookingDbContext db) : IBookingRepository
     public async Task<Booking?> GetEntityByIdAsync(Guid id) =>
         await db.Bookings.FindAsync(id);
 
-    public async Task<bool> HasConflictAsync(Guid roomId, DateTime start, DateTime end, Guid? excludeBookingId = null) =>
-      await db.Bookings.AnyAsync(b =>
-          b.RoomId == roomId &&
-          b.Id != excludeBookingId &&
-          b.StartTime < end &&
-          b.EndTime > start);
+    // Compiled queries are translated once at startup and reused on every call.
+    // The expression tree is never re-parsed. Use on genuinely hot paths only —
+    // adding complexity for queries that run rarely has no measurable benefit.
+    private static readonly Func<BookingDbContext, Guid, DateTime, DateTime, Guid?, Task<bool>>
+        _conflictQuery = EF.CompileAsyncQuery(
+            (BookingDbContext db, Guid roomId, DateTime start, DateTime end, Guid? excludeId) =>
+                db.Bookings.Any(b =>
+                    b.RoomId == roomId &&
+                    b.Id != excludeId &&
+                    b.StartTime < end &&
+                    b.EndTime > start));
 
-    public async Task<IEnumerable<BookingResponse>>
-    SearchAsync(BookingSearchQuery query)
+    public Task<bool> HasConflictAsync(
+        Guid roomId, DateTime start, DateTime end, Guid? excludeBookingId = null) =>
+        _conflictQuery(db, roomId, start, end, excludeBookingId);
+
+    public async Task<IEnumerable<BookingResponse>> SearchAsync(BookingSearchQuery query)
     {
+        // When a text search term is provided, route to PostgreSQL full-text search.
+        // EF.Functions.ToTsVector generates the @@ operator — not LIKE — so the GIN index can be used.
+        if (!string.IsNullOrWhiteSpace(query.Q))
+            return await FullTextSearchAsync(query.Q);
+
         IQueryable<Booking> q = db.Bookings
             .AsNoTracking()
             .Where(b => b.Room.IsAvailable);
@@ -108,6 +119,61 @@ public class BookingRepository(BookingDbContext db) : IBookingRepository
                     .ToList()))
             .ToListAsync();
     }
+
+    // Full-text search across title and description using PostgreSQL's native engine.
+    // EF.Functions.ToTsQuery translates the search term into a tsquery expression.
+    // The GIN index on the computed tsvector column makes this fast at any scale.
+    // Compare: Contains("board") → LIKE '%board%' → seq scan every time.
+    //          FullTextSearch("board") → @@ operator → GIN index scan.
+    public async Task<IEnumerable<BookingResponse>> FullTextSearchAsync(string searchTerm)
+    {
+        return await db.Bookings
+            .AsNoTracking()
+            .Where(b => EF.Functions.ToTsVector("english", b.Title + " " + b.Description)
+                .Matches(EF.Functions.ToTsQuery("english", searchTerm)))
+            .Select(b => new BookingResponse(
+                b.Id,
+                b.Title,
+                b.Type.ToString(),
+                b.Room.Name,
+                b.Room.Floor,
+                b.StartTime,
+                b.EndTime,
+                b.OrganizerEmail,
+                b.Attendees.Count,
+                b.Attendees
+                    .Where(ba => ba.Attendee.IsExternal)
+                    .Select(ba => ba.Attendee.Name)
+                    .ToList()))
+            .ToListAsync();
+    }
+
+    // Room utilisation ranking — shows which rooms are busiest this month.
+    // Uses PostgreSQL RANK() window function which EF Core cannot generate from LINQ.
+    // FromSql maps the raw SQL result back to RoomUtilisationResponse.
+    public async Task<IEnumerable<RoomUtilisationResponse>> GetRoomUtilisationAsync(
+        DateTime from, DateTime to)
+    {
+        return await db.Database
+            .SqlQuery<RoomUtilisationResponse>(
+                $"""
+                SELECT r."Name" AS {nameof(RoomUtilisationResponse.RoomName)},
+                    COUNT(b."Id") AS {nameof(RoomUtilisationResponse.BookingCount)},
+                    COALESCE(SUM(EXTRACT(EPOCH FROM (b."EndTime" - b."StartTime")) / 3600), 0)
+                        AS {nameof(RoomUtilisationResponse.TotalHours)},
+                    RANK() OVER (ORDER BY COUNT(b."Id") DESC)
+                        AS {nameof(RoomUtilisationResponse.UsageRank)}
+                FROM rooms r
+                LEFT JOIN bookings b
+                    ON b."RoomId" = r."Id"
+                    AND b."StartTime" >= {from}
+                    AND b."EndTime" <= {to}
+                GROUP BY r."Id", r."Name"
+                ORDER BY {nameof(RoomUtilisationResponse.UsageRank)}
+                """)
+            .ToListAsync();
+    }
+
     public async Task<Booking> AddAsync(Booking booking)
     {
         db.Bookings.Add(booking);
@@ -127,4 +193,3 @@ public class BookingRepository(BookingDbContext db) : IBookingRepository
         await db.SaveChangesAsync();
     }
 }
-

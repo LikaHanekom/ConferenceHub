@@ -76,8 +76,9 @@ try
     // Previously AuthController built tokens itself with a hardcoded key.
     // Now the controller delegates to this service; token logic lives in one place.
     builder.Services.AddScoped<IAuthService, AuthService>();
-    builder.Services.AddDbContext<BookingDbContext>(options =>
-        options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    builder.Services.AddDbContext<BookingDbContext>((serviceProvider, options) =>
+        options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
+               .AddInterceptors(serviceProvider.GetRequiredService<SlowQueryInterceptor>()));
 
     builder.Services
         .AddBookingFeature()
