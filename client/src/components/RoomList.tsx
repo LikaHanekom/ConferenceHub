@@ -11,8 +11,8 @@ export function RoomList({ rooms, selectedId, onSelect }: RoomListProps) {
   if (rooms.length === 0) {
     return (
       <div className="py-16 text-center">
-        <p className="text-lg font-medium text-gray-400">No rooms found.</p>
-        <p className="mt-1 text-sm text-gray-400">
+        <p className="text-lg font-medium text-gray-400 dark:text-gray-500">No rooms found.</p>
+        <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
           All rooms may be under maintenance.
         </p>
       </div>
