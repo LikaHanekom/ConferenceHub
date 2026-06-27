@@ -58,3 +58,10 @@ organizerEmail: string;
 description?: string; 
 }
 
+export interface PagedBookingsResponse {
+  items: BookingResponse[];
+  page: number;
+  limit: number;
+  totalCount: number;
+  hasMore: boolean;
+}
